@@ -1,8 +1,8 @@
 """
 Author: LTH
 Date: 2023-06-02 10:33:32
-LastEditTime: 2023-06-02 10:40:29
-FilePath: \大作业\symbolic_intelligence\test.py
+LastEditTime: 2023-06-02 11:22:19
+FilePath: \大作业(GitHub仓库)\symbolic_intelligence\test.py
 Description: 
 Copyright (c) 2023 by LTH, All Rights Reserved.
 """
