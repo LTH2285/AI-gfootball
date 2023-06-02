@@ -1,0 +1,5 @@
+numpy
+gfootball
+tensorflow
+dm-sonnet==1.* psutil
+git+https://github.com/openai/baselines.git@master
