@@ -104,8 +104,9 @@ def play(epochs=500):
                 break
         if episode_reward > 0:
             wining_count += 1
-        # if count[0]==0:
-        #     env = create_single_football_env(1)  # 出现bug，重新创建环境
+        if count[0] == 0:
+            env = create_single_football_env(1)  # 出现bug，重新创建环境
+            continue
         print("episode", episode, "reward", episode_reward)
         print("control percentage:", 100 * count / np.sum(count))
         count_sum += count
