@@ -10,6 +10,22 @@ from torch.distributions import Categorical
 def orthogonal_init(layer, gain=1.0):
     nn.init.orthogonal_(layer.weight, gain=gain)
     nn.init.constant_(layer.bias, 0)
+    
+class SimpleGRUNetwork(nn.Module):
+    def __init__(self, input_size, hidden_size):
+        super(SimpleGRUNetwork, self).__init__()
+        self.hidden_size = hidden_size
+        self.gru = nn.GRU(input_size, hidden_size)
+        self.hidden_state = None
+
+    def reset_hidden_state(self, batch_size):
+        self.hidden_state = torch.zeros(batch_size, self.hidden_size)
+
+    def forward(self, x):
+        
+        output, self.hidden_state = self.gru(x, self.hidden_state)
+        
+        return output
 
 # 现在，我们的Critic需要评价全局的状态，但每个Actor只能看到一部分状态
 class Actor(nn.Module): #所有的智能体将共同使用这一套网络
@@ -24,9 +40,13 @@ class Actor(nn.Module): #所有的智能体将共同使用这一套网络
         self.pre4_1 = nn.Linear(128,256) 
 
 
-        self.fc1 = nn.Linear(800, 2048)
+        self.fc1 = nn.Linear(544, 2048)
         self.fc2 = nn.Linear(2048,512)
         self.fc3 = nn.Linear(512,19)
+        
+        self.n1 = nn.Linear(26,1024)
+        self.n2 = nn.Linear(1024,512)
+        self.n3 = nn.Linear(512,19)
 
         
         self.activate_func = [nn.ReLU(), nn.Tanh()][1]  # Trick10: use tanh
@@ -42,49 +62,59 @@ class Actor(nn.Module): #所有的智能体将共同使用这一套网络
             orthogonal_init(self.pre3_0)
             orthogonal_init(self.pre4_0)
             orthogonal_init(self.pre4_1)
+            
+            orthogonal_init(self.n1)
+            orthogonal_init(self.n2)
+            orthogonal_init(self.n3)
 
             orthogonal_init(self.fc3, gain=0.01)
 
     def forward(self, s):
         # print(s)
-        s1 = s[0][0:12]
-        # print(s1)
-        s1 = self.pre1_0(s1)
-        s1 = self.activate_func(s1)
-        s1 = self.pre1_1(s1)
-        s1 = self.activate_func(s1)
+        # s1 = s[0][0:12]
+        # # print(s1)
+        # s1 = self.pre1_0(s1)
+        # s1 = self.activate_func(s1)
+        # s1 = self.pre1_1(s1)
+        # s1 = self.activate_func(s1)
 
-        s2 = s[0][12:18]
-        s2 = self.pre2_0(s2)
-        s2 = self.activate_func(s2)
-        s2 = self.pre2_1(s2)
-        s2 = self.activate_func(s2)
+        # s2 = s[0][12:18]
+        # s2 = self.pre2_0(s2)
+        # s2 = self.activate_func(s2)
+        # s2 = self.pre2_1(s2)
+        # s2 = self.activate_func(s2)
 
-        s3 = s[0][18:21]
-        s3 = self.pre3_0(s3)
-        s3 = self.activate_func(s3)
+        # s3 = s[0][18:21]
+        # s3 = self.pre3_0(s3)
+        # s3 = self.activate_func(s3)
 
-        s4 = s[0][21:26]
-        s4 = self.pre4_0(s4)
-        s4 = self.activate_func(s4)
-        s4 = self.pre4_1(s4)
-        s4 = self.activate_func(s4)
+        # # s4 = s[0][21:26]
+        # # s4 = self.pre4_0(s4)
+        # # s4 = self.activate_func(s4)
+        # # s4 = self.pre4_1(s4)
+        # # s4 = self.activate_func(s4)
         
-        s1 = s1.unsqueeze(0)
-        s2 = s2.unsqueeze(0)
-        s3 = s3.unsqueeze(0)
-        s4 = s4.unsqueeze(0)
+        # s1 = s1.unsqueeze(0)
+        # s2 = s2.unsqueeze(0)
+        # s3 = s3.unsqueeze(0)
+        # # s4 = s4.unsqueeze(0)
 
         
-        s_pre =  torch.cat((s1, s2, s3,s4), dim=1)
-        # print(s_pre.shape)
-        s = self.fc1(s_pre)
+        # s_pre =  torch.cat((s1, s2, s3,), dim=1)
+        # # print(s_pre.shape)
+        # s = self.fc1(s_pre)
+        # s = self.activate_func(s)
+        # s = self.fc2(s)
+        # s = self.activate_func(s)
+        
+        s = self.n1(s)
+        s =self.activate_func(s)
+        s = self.n2(s)
         s = self.activate_func(s)
-        s = self.fc2(s)
-        s = self.activate_func(s)
+        
         
 
-        a_prob = torch.softmax(self.fc3(s), dim=1)
+        a_prob = torch.softmax(self.n3(s), dim=1)
         return a_prob
         # print(a_prob)
         # return a_prob
@@ -100,17 +130,22 @@ class Critic(nn.Module):
         self.pre3_0 = nn.Linear(3,32)   #全局控球特征
 
 
-        self.pre4_0 = nn.Linear(21,128) #推理所有距离信息
-        self.pre4_1 = nn.Linear(128,256) # 256
+        self.pre4_0 = nn.Linear(6,32) #推理所有距离信息
+        self.pre4_1 = nn.Linear(32,128) # 256
         self.pre5_0 = nn.Linear(19,128) #推理第二个球员的信息
         self.pre5_1 = nn.Linear(128,256) # 256
         self.pre6_0 = nn.Linear(19,128) #推理第三个球员的信息
         self.pre6_1 = nn.Linear(128,256) # 256
 
 
-        self.fc1 = nn.Linear(800, 4096) 
+        self.fc1 = nn.Linear(672, 4096) 
         self.fc2 = nn.Linear(4096,512)
         self.fc3 = nn.Linear(512,19)
+        
+        self.n1 = nn.Linear(59,1024)
+        self.n2 = nn.Linear(1024,512)
+        self.n3 = nn.Linear(512,1)
+        
 
         
         self.activate_func = [nn.ReLU(), nn.Tanh()][1]  # Trick10: use tanh
@@ -135,29 +170,29 @@ class Critic(nn.Module):
 
     def forward(self, s):
         # print(s)
-        s1 = s[:,0:15]
-        # print(s1)
-        s1 = self.pre1_0(s1)
-        s1 = self.activate_func(s1)
-        s1 = self.pre1_1(s1)
-        s1 = self.activate_func(s1)
+        # s1 = s[:,0:15]
+        # # print(s1)
+        # s1 = self.pre1_0(s1)
+        # s1 = self.activate_func(s1)
+        # s1 = self.pre1_1(s1)
+        # s1 = self.activate_func(s1)
 
-        s2 = s[:,15:30]
-        s2 = self.pre2_0(s2)
-        s2 = self.activate_func(s2)
-        s2 = self.pre2_1(s2)
-        s2 = self.activate_func(s2)
+        # s2 = s[:,15:30]
+        # s2 = self.pre2_0(s2)
+        # s2 = self.activate_func(s2)
+        # s2 = self.pre2_1(s2)
+        # s2 = self.activate_func(s2)
 
-        s3 = s[:,30:33]
-        s3 = self.pre3_0(s3)
-        s3 = self.activate_func(s3)
+        # s3 = s[:,30:33]
+        # s3 = self.pre3_0(s3)
+        # s3 = self.activate_func(s3)
 
         
-        s4 = s[:,33:54]
-        s4 = self.pre4_0(s4)
-        s4 = self.activate_func(s4)
-        s4 = self.pre4_1(s4)
-        s4 = self.activate_func(s4)
+        # s4 = s[:,33:54]
+        # s4 = self.pre4_0(s4)
+        # s4 = self.activate_func(s4)
+        # s4 = self.pre4_1(s4)
+        # s4 = self.activate_func(s4)
         
         # s5 = s[:,52:71]
         # s5 = self.pre5_0(s5)
@@ -178,15 +213,21 @@ class Critic(nn.Module):
         
         
         
-        s_pre =  torch.cat((s1, s2, s3 ,s4),dim=1)
+        # s_pre =  torch.cat((s1, s2, s3 ,s4),dim=1)
         # print(s_pre.shape)
-        s = self.fc1(s_pre)
-        s = self.activate_func(s)
-        s = self.fc2(s)
+        # s = self.fc1(s_pre)
+        # s = self.activate_func(s)
+        # s = self.fc2(s)
+        # s = self.activate_func(s)
+        
+        
+        s = self.n1(s)
+        s =self.activate_func(s)
+        s = self.n2(s)
         s = self.activate_func(s)
         
 
-        v_s = self.fc3(s)
+        v_s = self.n3(s)
         return v_s
 
 
@@ -233,7 +274,7 @@ class PPO_discrete:
         return a.numpy()[0], a_logprob.numpy()[0]
 
     def update(self, replay_buffer, total_steps):
-        s, a, a_logprob, r, s_, dw, done = replay_buffer.numpy_to_tensor()  # Get training data
+        sa, s, a, a_logprob, r, s_, dw, done = replay_buffer.numpy_to_tensor()  # Get training data
         """
             Calculate the advantage using GAE
             'dw=True' means dead or win, there is no next state s'
@@ -257,7 +298,7 @@ class PPO_discrete:
         for _ in range(self.K_epochs):
             # Random sampling and no repetition. 'False' indicates that training will continue even if the number of samples in the last time is less than mini_batch_size
             for index in BatchSampler(SubsetRandomSampler(range(self.batch_size)), self.mini_batch_size, False):
-                dist_now = Categorical(probs=self.actor(s[index]))
+                dist_now = Categorical(probs=self.actor(sa[index]))
                 dist_entropy = dist_now.entropy().view(-1, 1)  # shape(mini_batch_size X 1)
                 a_logprob_now = dist_now.log_prob(a[index].squeeze()).view(-1, 1)  # shape(mini_batch_size X 1)
                 # a/b=exp(log(a)-log(b))

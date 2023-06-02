@@ -18,7 +18,7 @@ import numpy as np
 from utils import calculating_state , calculating_reward , calculating_MA_states
 import argparse
 from normalization import Normalization, RewardScaling
-from replaybuffer import ReplayBuffer
+from multibuffer import ReplayBuffer
 from MAPPO_discrete import PPO_discrete
 import matplotlib.pyplot as plt 
 import torch
@@ -82,7 +82,7 @@ def evaluate_policy(args, env, agent, state_norm):
             toagent3 = toagent3_ 
             sdict = sdict_
             episode_step += 1
-            if episode_step > 2950:
+            if episode_step > 1450:
                 done = True 
             
         evaluate_reward += episode_reward
@@ -90,18 +90,26 @@ def evaluate_policy(args, env, agent, state_norm):
     return evaluate_reward / times
 
 def PPO_train(args, env):
+    
+  noise = np.random.normal(0,1,5).tolist()
+
+      
   record_rewards = []
   record_smooth_rewards = []
   record_goals = []
   smooth_reward = 0
   episode_goal = 0
   episode = 0
+  smooth_evaluate_record = [] 
+  smooth_evaluate = 0
 
 
   evaluate_num = 0  # Record the number of evaluations
   evaluate_rewards = []  # Record the rewards during the evaluating
   evaluate_episodes = []
   total_steps = 0  # Record the total steps during the training
+  smooth_evaluate_record = [] 
+  smooth_evaluate = 0
 
   replay_buffer = ReplayBuffer(args)
   agent = PPO_discrete(args)
@@ -118,7 +126,7 @@ def PPO_train(args, env):
 #   agent.critic.load_state_dict(saved_parameters_critic)
 ##################################################################################
 
-  critic_state_norm = Normalization(shape = 54)  # Trick 2:state normalization #给critic用的标准化
+  critic_state_norm = Normalization(shape = 59)  # Trick 2:state normalization #给critic用的标准化
   actor_state_norm = Normalization(shape = 26) #给Actor使用的标准化
   
   if args.use_reward_norm:  # Trick 3:reward normalization
@@ -128,14 +136,17 @@ def PPO_train(args, env):
 
   # 记录数据
   data = []        
-
+  
 
 
   while total_steps < args.max_train_steps:
     episode += 1
     s = env.reset()
+    
     # print(s)
     sdict,tocritic,toagent1,toagent2,toagent3 = calculating_MA_states(s) #计算状态字典、发送给critic的全局状态以及发送给每个智能体的状态
+    tocritic = tocritic + noise 
+    # print(tocritic)
     if args.use_state_norm:
         tocritic = critic_state_norm(tocritic) #critic和Agent分别进行标准化
         toagent1 = actor_state_norm(toagent1)
@@ -152,7 +163,7 @@ def PPO_train(args, env):
     # episode_data = np.array([0.0,0.0,0,0,0,0])
 
     done = False
-    while not done and episode_steps < 2950: #这里需要提前结束，不然环境要出问题
+    while not done and episode_steps < 1450: #这里需要提前结束，不然环境要出问题
 
       episode_steps += 1
 
@@ -164,6 +175,8 @@ def PPO_train(args, env):
       # a = agent.evaluate(slist)
       s_, r, done, _ = env.step([a_agent1,a_agent2,a_agent3])
       sdict_,tocritic_,toagent1_,toagent2_,toagent3_ = calculating_MA_states(s_)
+      tocritic_ = tocritic_ + noise 
+    #   print(len(tocritic_))
 
       r = r[0] + r[1] + r[2] #这里，总体的奖励计算为：直接将三个分奖励加起来
       episode_goal += r
@@ -190,13 +203,13 @@ def PPO_train(args, env):
           dw = True
       else:
           dw = False
-      if episode_steps == 2949:
+      if episode_steps == 1450:
           done = True 
 
       # Take the 'action'，but store the original 'a'（especially for Beta）
-      replay_buffer.store(tocritic, a_agent1, logprob_agent1, r, tocritic_, dw, done) #向buffer内存入状态的时候，实际上应该存critic可以读取到的全局状态。因为过会critic要根据全局状态评价智能体们的动作
-      replay_buffer.store(tocritic, a_agent2, logprob_agent2, r, tocritic_, dw, done)
-      replay_buffer.store(tocritic, a_agent3, logprob_agent3, r, tocritic_, dw, done)
+      replay_buffer.store(toagent1_,tocritic, a_agent1, logprob_agent1, r, tocritic_, dw, done) #向buffer内存入状态的时候，实际上应该存critic可以读取到的全局状态。因为过会critic要根据全局状态评价智能体们的动作
+      replay_buffer.store(toagent2_,tocritic, a_agent2, logprob_agent2, r, tocritic_, dw, done)
+      replay_buffer.store(toagent3_,tocritic, a_agent3, logprob_agent3, r, tocritic_, dw, done) #之恩那个提的z
       # 所有智能体共享同一个critic，所以所有智能体的东西都可以存进一个replaybuffer中
         
       tocritic = tocritic_
@@ -234,11 +247,22 @@ def PPO_train(args, env):
     else :
         smooth_reward = smooth_reward * 0.95 + episode_reward * 0.05
     record_smooth_rewards.append(smooth_reward)
+    
+    if episode < 10 :
+        smooth_evaluate = np.nan
+    elif episode == 11:
+        smooth_evaluate = evaluate_rewards[-1] 
+    else :
+        smooth_evaluate = smooth_evaluate*0.95 + evaluate_rewards[-1]  * 0.05
+    smooth_evaluate_record.append(smooth_evaluate)
+    
+    
 
-    if episode % 4 == 0 :
-        plt.plot(record_rewards,label = "reward",color = "silver")
+    if episode % 3 == 0 :
+        plt.plot(record_rewards,label = "reward",color = "royalblue",linewidth = 1 ,alpha = 0.3)
         plt.plot(record_smooth_rewards,label = "smooth",color = "royalblue",linewidth = 2)
-        plt.plot(evaluate_episodes,evaluate_rewards,label = "evaluate",color = "tomato",linewidth = 2)
+        plt.plot(evaluate_episodes,evaluate_rewards,label = "evaluate",color = "tomato",linewidth = 1,alpha = 0.3)
+        plt.plot(smooth_evaluate_record,label = "smooth",color = "tomato",linewidth = 2)
         # print(evaluates)
         plt.legend()
         plt.xlabel("Episode")
@@ -257,6 +281,10 @@ def PPO_train(args, env):
         torch.save(agent.critic.state_dict(), './gfootball/examples/MAcritic_parameters.pth')
         # df = pd.DataFrame(data,columns=['reward_goal' , 'reward_dis' , 'reward_con' , 'reward_dir' , 'reward_atk' , 'reward_ball_dir'])
         # df.to_csv("./gfootball/examples/PPO_data.csv") 
+    
+    if episode % 10 == 0:
+        noise = np.random.normal(0,1,5).tolist()
+        
 
   plt.plot(record_rewards,label = "reward",color = "silver")
   plt.plot(record_smooth_rewards,label = "smooth",color = "royalblue",linewidth = 2)
@@ -283,13 +311,13 @@ def main():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Hyperparameter Setting for PPO-discrete")
     parser.add_argument("--max_train_steps", type=int, default=int(50e5), help=" Maximum number of training steps")
-    parser.add_argument("--evaluate_freq", type=float, default=9e3, help="Evaluate the policy every 'evaluate_freq' steps")
+    parser.add_argument("--evaluate_freq", type=float, default=5e3, help="Evaluate the policy every 'evaluate_freq' steps")
     parser.add_argument("--save_freq", type=int, default=20, help="Save frequency")
-    parser.add_argument("--batch_size", type=int, default=18000, help="Batch size")
+    parser.add_argument("--batch_size", type=int, default=1024*9, help="Batch size")
     parser.add_argument("--mini_batch_size", type=int, default=1024, help="Minibatch size")
     # parser.add_argument("--hidden_width", type=int, default=64, help="The number of neurons in hidden layers of the neural network")
-    parser.add_argument("--lr_a", type=float, default=6e-4, help="Learning rate of actor")
-    parser.add_argument("--lr_c", type=float, default=6e-4, help="Learning rate of critic")
+    parser.add_argument("--lr_a", type=float, default=2e-4, help="Learning rate of actor")
+    parser.add_argument("--lr_c", type=float, default=3e-4, help="Learning rate of critic")
     parser.add_argument("--gamma", type=float, default=0.995, help="Discount factor")
     parser.add_argument("--lamda", type=float, default=0.95, help="GAE parameter")
     parser.add_argument("--epsilon", type=float, default=0.1, help="PPO clip parameter")
@@ -298,7 +326,7 @@ if __name__ == '__main__':
     parser.add_argument("--use_state_norm", type=bool, default=True, help="Trick 2:state normalization")
     parser.add_argument("--use_reward_norm", type=bool, default=False, help="Trick 3:reward normalization")
     parser.add_argument("--use_reward_scaling", type=bool, default=True, help="Trick 4:reward scaling")
-    parser.add_argument("--entropy_coef", type=float, default=0.015, help="Trick 5: policy entropy")
+    parser.add_argument("--entropy_coef", type=float, default=0.010, help="Trick 5: policy entropy")
     parser.add_argument("--use_lr_decay", type=bool, default=True, help="Trick 6:learning rate Decay")
     parser.add_argument("--use_grad_clip", type=bool, default=True, help="Trick 7: Gradient clip")
     parser.add_argument("--use_orthogonal_init", type=bool, default=True, help="Trick 8: orthogonal initialization")
@@ -306,8 +334,9 @@ if __name__ == '__main__':
     parser.add_argument("--use_tanh", type=float, default=True, help="Trick 10: tanh activation function")
 
     args = parser.parse_args()
-    args.state_dim = 54
+    args.state_dim = 59
     args.action_dim = 19
+    args.actor_state_dim = 21 +5
     
     
     PPO_train(args,env)
